@@ -9,8 +9,7 @@ final class EasyBankSteps {
     private let app: XCUIApplication
     private let page: EasyBankPage
     private let timeout: TimeInterval = 10
-    private let promptTimeout: TimeInterval = 2
-    private let maxPasswordAttempts = 3
+    private let maxTypingAttempts = 3
 
     init(app: XCUIApplication) {
         self.app = app
@@ -72,16 +71,14 @@ final class EasyBankSteps {
     }
 
     func enterRegistrationPasswords(_ password: String) {
-        enterPassword(password, into: page.registrationPasswordField)
-        enterPassword(password, into: page.registrationRepeatPasswordField)
+        // Focusing a hidden password field on the registration form makes iOS apply
+        // Automatic Strong Password, which covers both fields and discards typed text.
+        // Showing both passwords first keeps them as plain text fields.
+        showPassword(in: page.registrationPasswordField, using: page.registrationPasswordVisibilityButton)
+        showPassword(in: page.registrationRepeatPasswordField, using: page.registrationRepeatPasswordVisibilityButton)
 
-        // A strong password suggestion can overwrite the first field while the
-        // second one is focused, so check it again before submitting.
-        if secureTextLength(of: page.registrationPasswordField) != password.count {
-            enterPassword(password, into: page.registrationPasswordField)
-        }
-        XCTAssertEqual(secureTextLength(of: page.registrationPasswordField), password.count, "Password length mismatch")
-        XCTAssertEqual(secureTextLength(of: page.registrationRepeatPasswordField), password.count, "Repeat password length mismatch")
+        enterText(password, into: page.registrationPasswordField)
+        enterText(password, into: page.registrationRepeatPasswordField)
     }
 
     func submitRegistration() {
@@ -133,18 +130,19 @@ final class EasyBankSteps {
 
     private func enterText(_ text: String, into field: XCUIElement) {
         tap(field)
-        clearText(in: field)
-        field.typeText(text)
-        XCTAssertEqual((field.value as? String)?.lowercased(), text.lowercased(), "Unexpected text in \(field.identifier)")
+        for _ in 1...maxTypingAttempts {
+            clearText(in: field)
+            field.typeText(text)
+            if field.value as? String == text {
+                return
+            }
+        }
+        XCTFail("Could not enter the expected text into \(field.identifier); value is '\(field.value as? String ?? "")'")
     }
 
     private func enterPassword(_ password: String, into field: XCUIElement) {
         tap(field)
-        if dismissStrongPasswordPromptIfShown() {
-            tap(field)
-        }
-
-        for _ in 1...maxPasswordAttempts {
+        for _ in 1...maxTypingAttempts {
             clearText(in: field)
             field.typeText(password)
             if secureTextLength(of: field) == password.count {
@@ -154,6 +152,21 @@ final class EasyBankSteps {
         XCTFail("Could not enter the password into \(field.identifier)")
     }
 
+    private func showPassword(in field: XCUIElement, using visibilityButton: XCUIElement) {
+        assertExists(field)
+        guard field.elementType == .secureTextField else { return }
+        tap(visibilityButton)
+        let visible = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "elementType == %d", XCUIElement.ElementType.textField.rawValue),
+            object: field
+        )
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [visible], timeout: timeout),
+            .completed,
+            "\(field.identifier) did not become visible"
+        )
+    }
+
     private func clearText(in field: XCUIElement) {
         guard let value = field.value as? String, !value.isEmpty, value != field.placeholderValue else { return }
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
@@ -161,21 +174,6 @@ final class EasyBankSteps {
 
     private func secureTextLength(of field: XCUIElement) -> Int {
         (field.value as? String)?.filter { $0 == "•" }.count ?? 0
-    }
-
-    @discardableResult
-    private func dismissStrongPasswordPromptIfShown() -> Bool {
-        let candidates = page.strongPasswordDismissButtons
-        let promptShown = XCTNSPredicateExpectation(
-            predicate: NSPredicate { _, _ in candidates.contains { $0.exists } },
-            object: nil
-        )
-        guard XCTWaiter().wait(for: [promptShown], timeout: promptTimeout) == .completed,
-              let button = candidates.first(where: { $0.exists && $0.isHittable }) else {
-            return false
-        }
-        button.tap()
-        return true
     }
 
     private func dismissKeyboard() {

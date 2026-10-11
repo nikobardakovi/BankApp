@@ -9,7 +9,6 @@ import XCTest
 
 class EasyBankPage {
     private let app: XCUIApplication
-    private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     init(app: XCUIApplication) {
         self.app = app
@@ -30,8 +29,12 @@ class EasyBankPage {
     // MARK: - Registration
 
     var registrationEmailField: XCUIElement { app.textFields["registration.email"] }
-    var registrationPasswordField: XCUIElement { app.secureTextFields["registration.password"] }
-    var registrationRepeatPasswordField: XCUIElement { app.secureTextFields["registration.repeatPassword"] }
+    // Password fields switch between SecureTextField and TextField when their
+    // visibility changes, so they are matched by identifier only.
+    var registrationPasswordField: XCUIElement { element(withIdentifier: "registration.password") }
+    var registrationRepeatPasswordField: XCUIElement { element(withIdentifier: "registration.repeatPassword") }
+    var registrationPasswordVisibilityButton: XCUIElement { registrationPasswordField.buttons.firstMatch }
+    var registrationRepeatPasswordVisibilityButton: XCUIElement { registrationRepeatPasswordField.buttons.firstMatch }
     var registrationSubmitButton: XCUIElement { app.buttons["registration.submit"] }
     var registrationErrorText: XCUIElement { app.staticTexts["registration.error"] }
 
@@ -51,14 +54,7 @@ class EasyBankPage {
     var keyboard: XCUIElement { app.keyboards.firstMatch }
     var keyboardReturnKey: XCUIElement { app.keyboards.buttons["Return"] }
 
-    /// "Use Strong Password?" is an OS prompt; depending on the iOS version it is
-    /// shown inside the app's keyboard area or by SpringBoard.
-    var strongPasswordDismissButtons: [XCUIElement] {
-        [
-            app.buttons["Close"],
-            app.buttons["Choose My Own Password"],
-            springboard.buttons["Close"],
-            springboard.buttons["Choose My Own Password"]
-        ]
+    private func element(withIdentifier identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
     }
 }
